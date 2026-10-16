@@ -83,9 +83,9 @@ flowchart LR
 
 ![Mapa principal de Alertas Climatológicas](docs/capturas/mapa-principal.png)
 
-### Pronóstico meteorológico por hora
+### Apis Integradas
 
-![Detalle del pronóstico meteorológico](docs/capturas/apis.png)
+![Detalle de Apis](docs/capturas/apis.png)
 
 ### Sismos y alertas
 
