@@ -1,0 +1,18 @@
+name: Refresh data
+
+# Mantiene los datos al día y despierta el backend si el plan gratuito lo durmió.
+# Requiere los secretos BACKEND_URL (sin barra final) y REFRESH_TOKEN (el mismo del backend).
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger ingestion
+        run: |
+          curl -fsS --retry 3 --retry-delay 15 --max-time 120 -X POST \
+            -H "X-Refresh-Token: ${{ secrets.REFRESH_TOKEN }}" \
+            "${{ secrets.BACKEND_URL }}/api/refresh"

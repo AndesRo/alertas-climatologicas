@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+/* Paleta: noche en el Pacífico. Los colores de severidad son semánticos, no decorativos. */
+@theme static {
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-abyss: #0a1118;
+  --color-trench: #101b26;
+  --color-line: #1e2e3d;
+  --color-fog: #9db0c1;
+  --color-foam: #e8f0f6;
+  --color-signal: #4cc9f0;
+
+  --color-sev-yellow: #f5c451;
+  --color-sev-orange: #ff8a3d;
+  --color-sev-red: #ff4d5e;
+  --color-quake: #b28dff;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-abyss);
+  color: var(--color-foam);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-signal);
+  outline-offset: 2px;
+}
+
+/* Scroll discreto dentro de los paneles */
+.slim-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+
+/* ---- Leaflet en modo oscuro ------------------------------------------- */
+
+/* Convierte las teselas claras de OpenStreetMap en un mapa nocturno. Solo afecta a la capa base:
+   el radar y los marcadores son capas aparte y conservan sus colores. */
+.basemap-dark {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.55);
+}
+
+.leaflet-container {
+  background: var(--color-abyss);
+  font-family: var(--font-sans);
+}
+
+.leaflet-control-attribution {
+  background: rgb(10 17 24 / 0.75) !important;
+  color: var(--color-fog) !important;
+  font-size: 10px;
+}
+
+.leaflet-control-attribution a {
+  color: var(--color-fog) !important;
+}
+
+.leaflet-bar {
+  border: 1px solid var(--color-line) !important;
+  box-shadow: none !important;
+}
+
+.leaflet-bar a {
+  background: var(--color-trench) !important;
+  color: var(--color-foam) !important;
+  border-bottom-color: var(--color-line) !important;
+}
+
+.leaflet-bar a:hover {
+  background: var(--color-line) !important;
+}
+
+.leaflet-tooltip {
+  background: var(--color-trench);
+  color: var(--color-foam);
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  box-shadow: none;
+  padding: 6px 8px;
+  font: 12px/1.4 var(--font-sans);
+}
+
+.leaflet-tooltip-top::before {
+  border-top-color: var(--color-line);
+}
+
+/* Con el detalle abierto (escritorio) el panel cubriría el zoom y la atribución: se corren a su izquierda. */
+@media (min-width: 1024px) {
+  [data-detail="open"] .leaflet-bottom.leaflet-right {
+    margin-right: 436px;
+  }
+}
+
+/* ---- Marcadores de ciudades ------------------------------------------- */
+.pin-wrap {
+  background: none;
+  border: 0;
+}
+
+.pin {
+  --pin: #6f8396;
+  position: relative;
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 4px;
+  border-radius: 9999px;
+  background: var(--pin);
+  border: 2px solid var(--color-abyss);
+  box-shadow: 0 0 0 1px rgb(232 240 246 / 0.35);
+}
+
+.pin-yellow {
+  --pin: var(--color-sev-yellow);
+}
+
+.pin-orange {
+  --pin: var(--color-sev-orange);
+}
+
+.pin-red {
+  --pin: var(--color-sev-red);
+}
+
+.pin-selected {
+  width: 16px;
+  height: 16px;
+  margin: 3px;
+  box-shadow: 0 0 0 2px var(--color-signal);
+}
+
+/* Solo las alertas naranja y roja laten: el movimiento llama la atención donde importa. */
+.pin-orange::after,
+.pin-red::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 9999px;
+  border: 2px solid var(--pin);
+  opacity: 0;
+  animation: pin-pulse 3.2s ease-out infinite;
+}
+
+.pin-red::after {
+  animation-duration: 2.2s;
+}
+
+@keyframes pin-pulse {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.9;
+  }
+
+  80%,
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .pin-orange::after,
+  .pin-red::after {
+    animation: none;
+    opacity: 0.45;
+    transform: scale(1.1);
+  }
+}

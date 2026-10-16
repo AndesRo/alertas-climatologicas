@@ -1,0 +1,23 @@
+# Levanta todo con:  docker compose up --build   ->  http://localhost:8080
+services:
+  backend:
+    build: ./backend
+    environment:
+      CORS_ORIGINS: http://localhost:8080
+      REFRESH_TOKEN: ${REFRESH_TOKEN:-}
+    volumes:
+      - centinela-data:/data
+    ports:
+      - "8000:8000" # opcional: documentación interactiva en http://localhost:8000/docs
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  centinela-data:
