@@ -2,10 +2,8 @@
 
 Monitoreo de amenazas climáticas y sísmicas en Chile. Consulta pronósticos y sismos de APIs gratuitas, los pasa por un motor de reglas propio y muestra las alertas en un mapa interactivo.
 
-<!-- Cuando tengas el GIF de la demo (15 s), guárdalo como docs/demo.gif y descomenta la línea siguiente. -->
-<!-- ![Demo de Centinela](docs/demo.gif) -->
 
-**Demo:** `[URL de Vercel]` · **API:** `[URL del backend]/docs`
+**Demo:** `[https://alertas-climatologicas.vercel.app/]` · **API:** `[https://alertas-climatologicas-api.onrender.com/]/docs`
 
 ## Qué hace
 
@@ -15,6 +13,49 @@ Monitoreo de amenazas climáticas y sísmicas en Chile. Consulta pronósticos y 
 - Muestra todo en un mapa oscuro con marcadores por severidad, radar de lluvia, sismos por magnitud, filtros y un pronóstico por hora con los umbrales dibujados.
 
 Nombrarlo "sensor" sería engañoso: no hay hardware. Es un **sensor virtual**: ingiere datos de terceros, aplica reglas y emite alertas.
+
+## Tecnologías y herramientas
+
+### Backend y datos
+
+<p>
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/Pydantic-E92063?style=for-the-badge&logo=pydantic&logoColor=white" alt="Pydantic" />
+  <img src="https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" />
+  <img src="https://img.shields.io/badge/HTTPX-333333?style=for-the-badge" alt="HTTPX" />
+</p>
+
+### Frontend
+
+<p>
+  <img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React" />
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" alt="Tailwind CSS" />
+  <img src="https://img.shields.io/badge/Leaflet-199900?style=for-the-badge&logo=leaflet&logoColor=white" alt="Leaflet" />
+  <img src="https://img.shields.io/badge/Recharts-888888?style=for-the-badge" alt="Recharts" />
+</p>
+
+### APIs y fuentes de datos
+
+<p>
+  <img src="https://img.shields.io/badge/Open%20Meteo-0B6E99?style=for-the-badge" alt="Open-Meteo" />
+  <img src="https://img.shields.io/badge/USGS-1A1A1A?style=for-the-badge" alt="USGS Earthquake Catalog" />
+  <img src="https://img.shields.io/badge/RainViewer-009DCE?style=for-the-badge" alt="RainViewer" />
+  <img src="https://img.shields.io/badge/OpenStreetMap-7EBC6F?style=for-the-badge&logo=openstreetmap&logoColor=white" alt="OpenStreetMap" />
+</p>
+
+### Infraestructura y calidad
+
+<p>
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
+  <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions" />
+  <img src="https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white" alt="Git" />
+  <img src="https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub" />
+  <img src="https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" />
+  <img src="https://img.shields.io/badge/pytest-0A9EDC?style=for-the-badge" alt="pytest" />
+</p>
 
 ## Arquitectura
 
