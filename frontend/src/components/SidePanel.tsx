@@ -261,8 +261,7 @@ export function SidePanel({
 
       <footer className="border-t border-line px-5 py-3 text-[11px] leading-relaxed text-fog">
         <p>
-          Alertas informativas calculadas con umbrales propios. No reemplazan los avisos oficiales de SENAPRED, la
-          Dirección Meteorológica de Chile ni el Centro Sismológico Nacional.
+          created by Andres(@AndesRo)
         </p>
         <p className="mt-1.5">
           Datos:{" "}
