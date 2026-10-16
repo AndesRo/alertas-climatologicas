@@ -77,6 +77,20 @@ flowchart LR
 - **El motor de reglas es código puro** (`backend/app/rules.py`): sin red ni base de datos, por eso se testea con datos sintéticos.
 - **Los umbrales viven en un solo lugar.** El frontend los lee de `GET /api/rules` para dibujar las líneas del gráfico.
 
+## Capturas de pantalla
+
+### Mapa general
+
+![Mapa principal de Alertas Climatológicas](docs/capturas/mapa-principal.png)
+
+### Pronóstico meteorológico por hora
+
+![Detalle del pronóstico meteorológico](docs/capturas/apis.png)
+
+### Sismos y alertas
+
+![Panel de sismos y alertas](docs/capturas/sismos-alertas.png)
+
 ## Stack
 
 | Capa | Tecnología |
