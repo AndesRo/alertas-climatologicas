@@ -11,10 +11,7 @@ const CHILE_BOUNDS: L.LatLngBoundsExpression = [
   [-17, -64],
 ];
 
-// Mapa base. Por defecto: teselas estándar de OpenStreetMap (gratis, sin clave), oscurecidas con un filtro CSS.
-// CARTO ahora exige clave API y mostraba la marca "API KEY REQUIRED" sobre todo el mapa.
-// Para usar otro proveedor (MapTiler, Stadia, Jawg...) define VITE_TILE_URL y VITE_TILE_ATTRIBUTION;
-// en ese caso no se aplica el filtro, porque se asume que el estilo elegido ya es el que quieres.
+
 const CUSTOM_TILE_URL = import.meta.env.VITE_TILE_URL as string | undefined;
 const TILE_URL = CUSTOM_TILE_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const TILE_ATTRIBUTION =
