@@ -1,0 +1,27 @@
+name: Mantener datos frescos
+
+# Opcional. Visita /api/overview y /api/precip cada 20 minutos para que el CDN de Vercel renueve los datos antes de que
+# llegue una persona, así nadie espera a las APIs externas. No es necesario para que el sitio funcione.
+#
+# Configuración: Settings > Secrets and variables > Actions > pestaña Variables > New repository variable
+#   Nombre: SITE_URL      Valor: https://tu-proyecto.vercel.app   (sin barra final)
+# GitHub desactiva los workflows programados tras 60 días sin actividad en el repositorio.
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+
+jobs:
+  warm:
+    if: ${{ vars.SITE_URL != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Visit the API
+        run: |
+          curl -fsS --retry 3 --retry-delay 20 --max-time 60 -o /dev/null \
+            -w "HTTP %{http_code} en %{time_total}s\n" "${{ vars.SITE_URL }}/api/overview"
+      - name: Visit the precipitation layer
+        if: ${{ always() }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 20 --max-time 60 -o /dev/null \
+            -w "HTTP %{http_code} en %{time_total}s\n" "${{ vars.SITE_URL }}/api/precip"

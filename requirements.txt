@@ -1,0 +1,6 @@
+# Dependencias de producción. Vercel instala este archivo para la función de api/index.py.
+# Versiones fijadas: son las que pasan los tests.
+fastapi==0.143.2
+httpx==0.28.1
+pydantic==2.14.1
+tzdata>=2024.1
