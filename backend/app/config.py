@@ -30,7 +30,12 @@ class Settings:
 def get_settings() -> Settings:
     origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
     return Settings(
-        db_path=Path(os.getenv("DB_PATH", "data/centinela.db")),
+      db_path=Path(
+    os.getenv(
+        "DB_PATH",
+        "/tmp/centinela.db" if os.getenv("VERCEL") else "data/centinela.db",
+    )
+),
         ingest_interval_min=int(os.getenv("INGEST_INTERVAL_MIN", "15")),
         scheduler_enabled=_as_bool(os.getenv("SCHEDULER_ENABLED"), True),
         refresh_token=os.getenv("REFRESH_TOKEN") or None,
