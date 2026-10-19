@@ -176,7 +176,11 @@ def test_refresh_runs_ingest_then_skips_when_called_again(tmp_path, monkeypatch)
         db.set_meta("last_attempt_at", datetime.now(timezone.utc).isoformat())
         return IngestResult(ok=True, forecasts=19, quakes=2, alerts=3)
 
+    async def fake_precip_ingest(db, settings, **kw):
+        return False  # esta prueba no debe salir a la red
+
     monkeypatch.setattr("app.main.run_ingest", fake_run_ingest)
+    monkeypatch.setattr("app.main.run_precip_ingest", fake_precip_ingest)
 
     with TestClient(create_app(make_settings(tmp_path))) as client:
         headers = {"X-Refresh-Token": "secret"}

@@ -22,6 +22,9 @@ class Settings:
     refresh_min_interval_s: int
     cors_origins: list[str]
     user_agent: str
+    # La grilla de precipitación son ~200 puntos y Open-Meteo cuenta cada punto contra su límite diario
+    # gratuito, así que se renueva menos seguido que el resto. Los modelos publican una corrida por hora.
+    precip_ttl_s: int = 3600
 
 
 def get_settings() -> Settings:
@@ -34,4 +37,5 @@ def get_settings() -> Settings:
         refresh_min_interval_s=int(os.getenv("REFRESH_MIN_INTERVAL_S", "300")),
         cors_origins=[o.strip() for o in origins.split(",") if o.strip()],
         user_agent=os.getenv("USER_AGENT", "centinela/1.0 (proyecto de portafolio)"),
+        precip_ttl_s=int(os.getenv("PRECIP_TTL_S", "3600")),
     )

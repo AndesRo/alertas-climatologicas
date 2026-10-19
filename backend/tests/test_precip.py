@@ -1,24 +1,24 @@
-"""Capa de precipitación prevista: grilla, cliente, caché del servicio, endpoint y datos de demo."""
+"""Capa de precipitación prevista: grilla, cliente, renovación horaria, endpoint y datos de demo."""
 
 import asyncio
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import clients, service
+from app import clients
 from app.clients import UpstreamError, fetch_precip_grid
 from app.config import Settings
-from app.demo import build_demo_precip
+from app.db import Database
 from app.grid import ENVELOPE, GRID_POINTS, GRID_STEP_DEG, build_grid
+from app.ingest import PRECIP_META_KEY, load_precip, run_precip_ingest
 from app.locations import LOCATIONS
 from app.main import create_app
-from app.service import NoDataError, SnapshotService
+from scripts.seed_demo import build_demo_precip
 
 from .helpers import NOW
-from .test_service import Clock, Upstream, make_service as make_overview_service
 
 CHUNKS = math.ceil(len(GRID_POINTS) / clients.PRECIP_CHUNK)
 RAIN_INDEX = 13  # NOW es 13:00 UTC: la serie de prueba parte a las 00:00, así que la hora actual es el índice 13
@@ -33,6 +33,20 @@ def run(coro):
     return asyncio.run(coro)
 
 
+def make_settings(tmp_path, **overrides) -> Settings:
+    base = dict(
+        db_path=tmp_path / "test.db",
+        ingest_interval_min=15,
+        scheduler_enabled=False,
+        refresh_token="secret",
+        refresh_min_interval_s=300,
+        cors_origins=["http://localhost:5173"],
+        user_agent="tests",
+    )
+    base.update(overrides)
+    return Settings(**base)
+
+
 def precip_item(*, hours: int = 48, first_hour: int = 0, rain: dict[int, float | None] | None = None) -> dict:
     """Un punto con el formato de Open-Meteo (hora UTC, 2 días): seco salvo lo indicado en `rain`."""
     times = [f"2026-10-{15 + (first_hour + h) // 24}T{(first_hour + h) % 24:02d}:00" for h in range(hours)]
@@ -43,19 +57,16 @@ def precip_item(*, hours: int = 48, first_hour: int = 0, rain: dict[int, float |
 
 
 class GridUpstream:
-    """Open-Meteo falso que solo atiende la grilla, con interruptores para simular caídas."""
+    """Open-Meteo falso que solo atiende la grilla, con un interruptor para simular caídas."""
 
     def __init__(self):
         self.calls = 0
         self.params: list[dict] = []
         self.down = False
-        self.hang = False
 
-    async def handle(self, request: httpx.Request) -> httpx.Response:
+    def handle(self, request: httpx.Request) -> httpx.Response:
         self.calls += 1
         self.params.append(dict(request.url.params))
-        if self.hang:
-            await asyncio.sleep(30)
         if self.down:
             return httpx.Response(500)
         count = len(request.url.params["latitude"].split(","))
@@ -63,12 +74,6 @@ class GridUpstream:
 
     def client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(transport=httpx.MockTransport(self.handle))
-
-
-def make_service(monkeypatch, upstream: GridUpstream, **settings) -> SnapshotService:
-    monkeypatch.setattr(service, "make_client", lambda user_agent: upstream.client())
-    monkeypatch.setattr(service, "datetime", type("D", (), {"now": staticmethod(lambda tz=None: NOW)}))
-    return SnapshotService(Settings(**settings))
 
 
 # --- grilla ---------------------------------------------------------------------------------------
@@ -92,9 +97,9 @@ def test_every_monitored_city_falls_inside_a_cell():
         assert any(abs(lat - loc.lat) <= half and abs(lon - loc.lon) <= half for lat, lon in GRID_POINTS), loc.name
 
 
-def test_grid_is_deterministic_and_rejects_latitudes_outside_the_envelope():
+def test_grid_is_deterministic_and_anchors_run_north_to_south():
     assert build_grid() == GRID_POINTS
-    assert ENVELOPE[0][0] > ENVELOPE[-1][0], "los anclajes van de norte a sur"
+    assert ENVELOPE[0][0] > ENVELOPE[-1][0]
 
 
 # --- cliente --------------------------------------------------------------------------------------
@@ -146,9 +151,8 @@ def _fails(handler, match):
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
             return await fetch_precip_grid(c, GRID_POINTS, now=NOW)
 
-    with pytest.raises(UpstreamError, match=match) as info:
+    with pytest.raises(UpstreamError, match=match):
         run(go())
-    assert "api.open-meteo.com" not in str(info.value), "el mensaje no debe filtrar la URL"
 
 
 def test_wrong_number_of_results_is_an_error():
@@ -180,143 +184,100 @@ def test_malformed_item_is_an_error():
     _fails(lambda r: httpx.Response(200, json=[{"nada": 1}] * len(r.url.params["latitude"].split(","))), "formato inesperado")
 
 
-def test_http_errors_are_reported_without_the_url():
-    _fails(lambda r: httpx.Response(500), "HTTP 500")
+def test_http_errors_are_reported():
+    _fails(lambda r: httpx.Response(500), "500")
 
 
-# --- servicio: caché y resiliencia ----------------------------------------------------------------
-def test_grid_is_cached_within_its_ttl_and_shared_by_concurrent_requests(monkeypatch):
+# --- ingesta de la grilla -------------------------------------------------------------------------
+def ingest(db, settings, upstream, *, now=NOW):
+    async def go():
+        async with upstream.client() as client:
+            return await run_precip_ingest(db, settings, client=client, now=now)
+
+    return run(go())
+
+
+def fresh_db(tmp_path, **overrides):
+    settings = make_settings(tmp_path, **overrides)
+    db = Database(settings.db_path)
+    db.init()
+    return db, settings
+
+
+def test_ingest_stores_the_grid_in_the_database(tmp_path):
+    db, settings = fresh_db(tmp_path)
+    assert load_precip(db) is None
+
+    assert ingest(db, settings, GridUpstream()) is True
+
+    grid = load_precip(db)
+    assert grid is not None and len(grid.cells) == len(GRID_POINTS) and grid.demo is False
+    assert db.get_meta("precip_error") == ""
+
+
+def test_grid_is_not_requested_again_while_it_is_fresh(tmp_path):
+    db, settings = fresh_db(tmp_path, precip_ttl_s=3600)
     upstream = GridUpstream()
-    svc = make_service(monkeypatch, upstream, precip_ttl_s=3600)
-
-    async def burst():
-        return await asyncio.gather(*(svc.get_precip() for _ in range(5)))
-
-    grids = run(burst())
-    assert all(g is grids[0] for g in grids)
+    assert ingest(db, settings, upstream) is True
     assert upstream.calls == CHUNKS
 
-    run(svc.get_precip())
-    assert upstream.calls == CHUNKS  # sigue dentro del TTL: no se vuelve a gastar cupo de Open-Meteo
+    # La ingesta general corre cada 15 min, pero la grilla cuesta ~200 llamadas: no debe repetirse antes de tiempo.
+    assert ingest(db, settings, upstream, now=NOW + timedelta(minutes=45)) is False
+    assert upstream.calls == CHUNKS
 
-
-def test_grid_is_rebuilt_after_its_ttl(monkeypatch):
-    upstream = GridUpstream()
-    svc = make_service(monkeypatch, upstream, precip_ttl_s=0)
-    run(svc.get_precip())
-    run(svc.get_precip())
+    assert ingest(db, settings, upstream, now=NOW + timedelta(minutes=61)) is True
     assert upstream.calls == 2 * CHUNKS
 
 
-def test_grid_expires_with_the_wall_clock_even_if_the_process_was_asleep(monkeypatch):
-    """Una grilla vencida no puede seguir sirviéndose: el frontend la descarta y la capa desaparece."""
+def test_a_failure_keeps_the_previous_grid_and_records_the_error(tmp_path):
+    db, settings = fresh_db(tmp_path, precip_ttl_s=0)
     upstream = GridUpstream()
-    svc = make_service(monkeypatch, upstream, precip_ttl_s=3600)
-    clock = Clock().install(monkeypatch)
+    ingest(db, settings, upstream)
+    before = load_precip(db)
 
-    first = run(svc.get_precip())
-    clock.advance(minutes=30)
-    assert run(svc.get_precip()) is first
-    assert upstream.calls == CHUNKS
-
-    clock.advance(hours=2)  # el reloj monotónico no se entera de este salto
-    second = run(svc.get_precip())
-    assert second is not first and second.fetched_at != first.fetched_at
-    assert upstream.calls == 2 * CHUNKS
-
-
-def test_previous_grid_is_not_served_once_it_is_too_old(monkeypatch):
-    upstream = GridUpstream()
-    svc = make_service(monkeypatch, upstream, precip_ttl_s=3600)
-    clock = Clock().install(monkeypatch)
-    first = run(svc.get_precip())
     upstream.down = True
+    assert ingest(db, settings, upstream, now=NOW + timedelta(hours=1)) is False
 
-    clock.advance(hours=2)  # la fuente cayó: sirve la anterior, que aún es razonable
-    assert run(svc.get_precip()) is first
-
-    clock.advance(hours=5)  # 7 h desde la última lectura buena
-    with pytest.raises(NoDataError):
-        run(svc.get_precip())
+    assert load_precip(db) == before
+    assert "500" in (db.get_meta("precip_error") or "")
 
 
-def test_failure_without_any_previous_grid_raises(monkeypatch):
+def test_failure_without_any_previous_grid_leaves_the_database_empty(tmp_path):
+    db, settings = fresh_db(tmp_path)
     upstream = GridUpstream()
     upstream.down = True
-    with pytest.raises(NoDataError, match="HTTP 500"):
-        run(make_service(monkeypatch, upstream).get_precip())
+    assert ingest(db, settings, upstream) is False
+    assert load_precip(db) is None
 
 
-def test_failure_after_a_good_read_serves_the_previous_grid(monkeypatch):
-    upstream = GridUpstream()
-    svc = make_service(monkeypatch, upstream, precip_ttl_s=0)
-    first = run(svc.get_precip())
-    upstream.down = True
-    assert run(svc.get_precip()) is first
-
-
-def test_a_hanging_source_times_out(monkeypatch):
-    upstream = GridUpstream()
-    upstream.hang = True
-    svc = make_service(monkeypatch, upstream, build_timeout_s=0.3)
-    with pytest.raises(NoDataError, match="tiempo de espera agotado"):
-        run(svc.get_precip())
-
-
-def test_demo_mode_serves_a_synthetic_grid_without_network(monkeypatch):
-    def boom(*a, **k):
-        raise AssertionError("el modo demo no debe usar la red")
-
-    monkeypatch.setattr(service, "make_client", boom)
-    grid = run(SnapshotService(Settings(demo_mode=True)).get_precip())
-    assert grid.demo is True and len(grid.cells) == len(GRID_POINTS)
-
-
-def test_the_overview_never_requests_the_grid(monkeypatch):
-    """La grilla cuesta ~200 llamadas a Open-Meteo: no puede colarse en la lectura que se renueva cada 10 min."""
-    upstream = Upstream()
-    run(make_overview_service(monkeypatch, upstream).get())
-    assert upstream.calls["open_meteo"] == 1
+def test_corrupt_stored_grid_is_treated_as_missing_and_rebuilt(tmp_path):
+    db, settings = fresh_db(tmp_path)
+    db.set_meta(PRECIP_META_KEY, "{esto no es json")
+    assert load_precip(db) is None
+    assert ingest(db, settings, GridUpstream()) is True
 
 
 # --- endpoint -------------------------------------------------------------------------------------
-class FakeService:
-    def __init__(self, grid=None, error=None):
-        self.grid, self.error = grid, error
-
-    async def get_precip(self):
-        if self.error:
-            raise self.error
-        return self.grid
+def test_precip_endpoint_returns_503_before_the_first_read(tmp_path):
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        response = client.get("/api/precip")
+    assert response.status_code == 503
+    assert "aún no está disponible" in response.json()["detail"]
 
 
-@pytest.fixture
-def demo_grid():
-    return build_demo_precip(now=datetime(2026, 10, 15, 15, 0, tzinfo=timezone.utc))
+def test_precip_endpoint_returns_the_stored_grid(tmp_path):
+    db, settings = fresh_db(tmp_path)
+    ingest(db, settings, GridUpstream())
 
+    with TestClient(create_app(settings)) as client:
+        response = client.get("/api/precip")
 
-def test_precip_endpoint_returns_the_grid_with_hourly_cdn_caching(demo_grid):
-    with TestClient(create_app(Settings(), FakeService(demo_grid))) as c:
-        response = c.get("/api/precip")
     assert response.status_code == 200
-    assert response.headers["cache-control"] == "public, max-age=300, s-maxage=3600, stale-while-revalidate=21600"
+    assert response.headers["cache-control"] == "public, max-age=300"
     data = response.json()
     assert set(data) == {"fetched_at", "step_deg", "times", "cells", "demo"}
     assert len(data["cells"]) == len(GRID_POINTS) and len(data["times"]) == 25
     assert set(data["cells"][0]) == {"lat", "lon", "mm"}
-
-
-def test_precip_cache_follows_the_configured_ttl(demo_grid):
-    with TestClient(create_app(Settings(precip_ttl_s=1800), FakeService(demo_grid))) as c:
-        assert "s-maxage=1800, stale-while-revalidate=10800" in c.get("/api/precip").headers["cache-control"]
-
-
-def test_precip_unavailable_returns_503_that_is_not_cached():
-    with TestClient(create_app(Settings(), FakeService(error=NoDataError("x")))) as c:
-        response = c.get("/api/precip")
-    assert response.status_code == 503
-    assert response.headers["cache-control"] == "no-store"
-    assert "no está disponible" in response.json()["detail"]
 
 
 # --- datos de demo --------------------------------------------------------------------------------

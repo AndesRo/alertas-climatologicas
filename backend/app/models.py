@@ -85,6 +85,28 @@ class ForecastResponse(BaseModel):
     alerts: list[Alert]
 
 
+class PrecipCell(BaseModel):
+    """Una celda de la grilla: `mm[i]` es la precipitación (mm) de la hora que termina en `times[i]`."""
+
+    lat: float
+    lon: float
+    mm: list[float | None]
+
+
+class PrecipGrid(BaseModel):
+    """Precipitación prevista por el modelo de Open-Meteo sobre una grilla de Chile.
+
+    Es una predicción numérica, no una medición. `times` está en UTC (sin sufijo Z) y es
+    igual para todas las celdas. La celda `i` cubre `step_deg` grados centrados en (lat, lon).
+    """
+
+    fetched_at: str
+    step_deg: float
+    times: list[str]
+    cells: list[PrecipCell]
+    demo: bool = False
+
+
 class StatusResponse(BaseModel):
     last_ingest_at: str | None
     last_error: str | None

@@ -13,12 +13,12 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import Settings, get_settings
 from .db import Database
-from .ingest import run_ingest
+from .ingest import load_precip, run_ingest, run_precip_ingest
 from .locations import LOCATIONS, LOCATIONS_BY_ID
 from .models import (
     SEVERITY_RANK,
@@ -26,6 +26,7 @@ from .models import (
     AlertKind,
     ForecastResponse,
     LocationSummary,
+    PrecipGrid,
     Quake,
     Severity,
     StatusResponse,
@@ -43,7 +44,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     async def ingest_once():
         async with lock:
-            return await run_ingest(db, settings)
+            result = await run_ingest(db, settings)
+            try:
+                await run_precip_ingest(db, settings)  # no hace nada mientras la grilla siga vigente
+            except Exception:  # noqa: BLE001 - la grilla nunca debe tumbar la ingesta general
+                logger.exception("Falló la actualización de la precipitación prevista")
+            return result
 
     async def scheduler() -> None:
         while True:
@@ -129,6 +135,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/quakes", response_model=list[Quake])
     def list_quakes() -> list[Quake]:
         return db.get_quakes()
+
+    @app.get("/api/precip", response_model=PrecipGrid)
+    def precip(response: Response) -> PrecipGrid:
+        """Precipitación prevista por el modelo de Open-Meteo sobre una grilla de Chile, hora a hora."""
+        grid = load_precip(db)
+        if grid is None:
+            raise HTTPException(
+                status_code=503,
+                detail="La precipitación prevista aún no está disponible. Intenta de nuevo en unos minutos.",
+            )
+        response.headers["Cache-Control"] = "public, max-age=300"
+        return grid
 
     @app.get("/api/forecast/{location_id}", response_model=ForecastResponse)
     def forecast(location_id: str) -> ForecastResponse:

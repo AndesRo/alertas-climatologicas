@@ -4,9 +4,20 @@ import { KIND_LABEL, SEVERITY_META, SEVERITY_ORDER } from "../lib/severity";
 import { clockFromEpoch, timeAgo } from "../lib/format";
 
 export interface Layers {
+  precip: boolean;
   radar: boolean;
   quakes: boolean;
 }
+
+/** Estado de la grilla de precipitación: la capa solo se puede activar cuando está lista. */
+export type PrecipStatus = "loading" | "ready" | "stale" | "error";
+
+const PRECIP_STATUS_TEXT: Record<PrecipStatus, string> = {
+  loading: "cargando…",
+  ready: "modelo Open-Meteo",
+  stale: "desactualizada",
+  error: "no disponible",
+};
 
 interface Props {
   alerts: Alert[] | null;
@@ -20,6 +31,7 @@ interface Props {
   onToggleLayer: (layer: keyof Layers) => void;
   radarFailed: boolean;
   radarTime: number | null;
+  precipStatus: PrecipStatus;
   className?: string;
 }
 
@@ -49,6 +61,7 @@ export function SidePanel({
   onToggleLayer,
   radarFailed,
   radarTime,
+  precipStatus,
   className = "",
 }: Props) {
   const [severities, setSeverities] = useState<Set<Severity>>(new Set());
@@ -86,7 +99,7 @@ export function SidePanel({
       className={`absolute z-[1100] flex flex-col overflow-hidden border border-line bg-trench/90 backdrop-blur-md max-lg:inset-x-0 max-lg:bottom-0 max-lg:max-h-[46dvh] max-lg:rounded-t-2xl lg:bottom-9 lg:left-4 lg:top-4 lg:w-[384px] lg:rounded-2xl ${className}`}
     >
       <header className="px-5 pb-4 pt-5">
-        <h1 className="text-xl font-semibold tracking-tight">Alertas Climatologicas</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Centinela- Alertas Tempranas</h1>
         <p className="mt-0.5 text-sm text-fog">Clima y sismos en Chile, de Arica a Punta Arenas</p>
         <p className="mt-3 flex items-center gap-2 text-xs text-fog" role="status">
           <span
@@ -232,9 +245,26 @@ export function SidePanel({
       <div className="space-y-2 border-t border-line px-5 py-3 text-sm">
         <label className="flex cursor-pointer items-center justify-between gap-3">
           <span>
-            Radar de lluvia
+            Precipitación prevista
+            <span className="ml-2 text-xs text-fog">{PRECIP_STATUS_TEXT[precipStatus]}</span>
+          </span>
+          <input
+            type="checkbox"
+            className="size-4 accent-signal"
+            checked={layers.precip}
+            disabled={precipStatus !== "ready"}
+            onChange={() => onToggleLayer("precip")}
+          />
+        </label>
+        <label className="flex cursor-pointer items-center justify-between gap-3">
+          <span>
+            Radar RainViewer
             <span className="ml-2 text-xs text-fog">
-              {radarFailed ? "no disponible" : radarTime ? `a las ${clockFromEpoch(radarTime)}` : ""}
+              {radarFailed
+                ? "no disponible"
+                : layers.radar && radarTime
+                  ? `a las ${clockFromEpoch(radarTime)}`
+                  : "cobertura limitada en Chile"}
             </span>
           </span>
           <input
@@ -261,7 +291,7 @@ export function SidePanel({
 
       <footer className="border-t border-line px-5 py-3 text-[11px] leading-relaxed text-fog">
         <p>
-          created by Andres(@AndesRo)
+          @AndesRo 2026
         </p>
         <p className="mt-1.5">
           Datos:{" "}

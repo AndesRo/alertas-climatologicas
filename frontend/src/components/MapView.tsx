@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import L from "leaflet";
 import { CircleMarker, MapContainer, Marker, TileLayer, Tooltip, ZoomControl, useMap } from "react-leaflet";
-import type { LocationSummary, Quake, SeverityOrNone } from "../types";
+import type { LocationSummary, PrecipGrid, Quake, SeverityOrNone } from "../types";
 import { QUAKE_COLOR } from "../lib/severity";
 import { fmt, timeAgo } from "../lib/format";
+import { PrecipLayer } from "./PrecipLayer";
 
 // Chile continental, de Arica a Punta Arenas.
 const CHILE_BOUNDS: L.LatLngBoundsExpression = [
@@ -11,7 +12,10 @@ const CHILE_BOUNDS: L.LatLngBoundsExpression = [
   [-17, -64],
 ];
 
-
+// Mapa base. Por defecto: teselas estándar de OpenStreetMap (gratis, sin clave), oscurecidas con un filtro CSS.
+// CARTO ahora exige clave API y mostraba la marca "API KEY REQUIRED" sobre todo el mapa.
+// Para usar otro proveedor (MapTiler, Stadia, Jawg...) define VITE_TILE_URL y VITE_TILE_ATTRIBUTION;
+// en ese caso no se aplica el filtro, porque se asume que el estilo elegido ya es el que quieres.
 const CUSTOM_TILE_URL = import.meta.env.VITE_TILE_URL as string | undefined;
 const TILE_URL = CUSTOM_TILE_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const TILE_ATTRIBUTION =
@@ -50,12 +54,25 @@ interface Props {
   quakes: Quake[];
   showQuakes: boolean;
   radarUrl: string | null;
+  /** Grilla de precipitación y la hora a dibujar; null en cualquiera de los dos apaga la capa. */
+  precip: PrecipGrid | null;
+  precipIndex: number | null;
   selectedId: string | null;
   focus: [number, number] | null;
   onSelectLocation: (id: string) => void;
 }
 
-export function MapView({ locations, quakes, showQuakes, radarUrl, selectedId, focus, onSelectLocation }: Props) {
+export function MapView({
+  locations,
+  quakes,
+  showQuakes,
+  radarUrl,
+  precip,
+  precipIndex,
+  selectedId,
+  focus,
+  onSelectLocation,
+}: Props) {
   return (
     <MapContainer
       bounds={CHILE_BOUNDS}
@@ -74,6 +91,8 @@ export function MapView({ locations, quakes, showQuakes, radarUrl, selectedId, f
       />
 
       {radarUrl && <TileLayer key={radarUrl} url={radarUrl} opacity={0.7} maxNativeZoom={7} maxZoom={12} zIndex={5} />}
+
+      {precip && precipIndex !== null && <PrecipLayer grid={precip} index={precipIndex} />}
 
       {showQuakes &&
         quakes.map((q) => {

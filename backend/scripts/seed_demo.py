@@ -15,10 +15,13 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta, timezone
 
+from app.clients import PRECIP_HOURS
 from app.config import get_settings
 from app.db import Database
+from app.grid import GRID_POINTS, GRID_STEP_DEG
+from app.ingest import PRECIP_META_KEY
 from app.locations import LOCATIONS
-from app.models import Current, Hourly, Location, Quake
+from app.models import Current, Hourly, Location, PrecipCell, PrecipGrid, Quake
 from app.rules import evaluate_location, evaluate_quakes, sort_alerts
 
 CHILE_TZ = timezone(timedelta(hours=-3))  # aproximación suficiente para una demo
@@ -60,6 +63,41 @@ def build_hourly(loc: Location, now_local: datetime, overrides: dict[str, dict[i
             if 0 <= index < 72:
                 series[key][index] = value
     return Hourly(**series)
+
+
+def build_demo_precip(*, now: datetime) -> PrecipGrid:
+    """Sistema frontal sintético que sube desde Aysén más una tormenta aislada cerca de Concepción.
+
+    Es una función pura de `now` (sin azar): mismas entradas, misma grilla. Se marca `demo=True`.
+    """
+    start = now.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    times = [(start + timedelta(hours=h)).strftime("%Y-%m-%dT%H:00") for h in range(PRECIP_HOURS)]
+
+    cells: list[PrecipCell] = []
+    for lat, lon in GRID_POINTS:
+        mm: list[float | None] = []
+        for h in range(PRECIP_HOURS):
+            # Banda frontal: avanza ~0,55° de latitud por hora y llueve más hacia el lado oeste (la costa).
+            band = math.exp(-((lat - (-46.0 + 0.55 * h)) ** 2) / (2 * 2.4**2))
+            windward = 0.55 + 0.45 * math.exp(-((lon + 73.5) ** 2) / (2 * 2.0**2))
+            intensity = 7.5 * (0.75 + 0.25 * math.sin(h / 3)) * band * windward
+            # Textura determinista para que no parezca una mancha perfecta.
+            intensity *= 0.8 + 0.2 * math.sin(lat * 3.1 + lon * 2.3 + h * 0.7)
+            # Tormenta aislada sobre el Biobío, entre +8 y +11 horas.
+            storm = 9.0 * math.exp(-((lat + 36.8) ** 2 + (lon + 73.0) ** 2) / (2 * 1.0**2)) * math.exp(
+                -((h - 9.5) ** 2) / (2 * 1.5**2)
+            )
+            total = intensity + storm
+            mm.append(round(total, 1) if total >= 0.05 else 0.0)
+        cells.append(PrecipCell(lat=lat, lon=lon, mm=mm))
+
+    return PrecipGrid(
+        fetched_at=now.isoformat(timespec="seconds"),
+        step_deg=GRID_STEP_DEG,
+        times=times,
+        cells=cells,
+        demo=True,
+    )
 
 
 def main() -> None:
@@ -113,10 +151,14 @@ def main() -> None:
     db.save_snapshots(snapshots, iso)
     db.replace_quakes(quakes)
     db.replace_alerts(sort_alerts(alerts))
+    db.set_meta(PRECIP_META_KEY, build_demo_precip(now=now).model_dump_json())
     db.set_meta("last_attempt_at", iso)
     db.set_meta("last_ingest_at", iso)
     db.set_meta("last_error", "")
-    print(f"Datos de demo cargados en {settings.db_path}: {len(alerts)} alertas, {len(quakes)} sismos.")
+    print(
+        f"Datos de demo cargados en {settings.db_path}: {len(alerts)} alertas, {len(quakes)} sismos "
+        f"y la grilla de precipitación ({len(GRID_POINTS)} celdas)."
+    )
 
 
 if __name__ == "__main__":

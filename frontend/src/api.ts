@@ -1,4 +1,4 @@
-import type { Alert, Forecast, LocationSummary, Quake, Rules, Status } from "./types";
+import type { Alert, Forecast, LocationSummary, PrecipGrid, Quake, Rules, Status } from "./types";
 
 // Vacío en desarrollo (proxy de Vite). En producción: URL del backend sin barra final.
 const BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? "").replace(/\/$/, "");
@@ -41,5 +41,6 @@ export const api = {
   locations: () => get<LocationSummary[]>("/api/locations"),
   alerts: () => get<Alert[]>("/api/alerts"),
   quakes: () => get<Quake[]>("/api/quakes"),
+  precip: () => get<PrecipGrid>("/api/precip"),
   forecast: (id: string, signal?: AbortSignal) => get<Forecast>(`/api/forecast/${id}`, signal),
 };

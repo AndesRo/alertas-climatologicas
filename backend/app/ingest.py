@@ -8,13 +8,17 @@ from datetime import datetime, timezone
 
 import httpx
 
-from .clients import UpstreamError, fetch_forecasts, fetch_quakes
+from .clients import UpstreamError, fetch_forecasts, fetch_precip_grid, fetch_quakes
 from .config import Settings
 from .db import Database
+from .grid import GRID_POINTS
 from .locations import LOCATIONS
+from .models import PrecipGrid
 from .rules import evaluate_location, evaluate_quakes, sort_alerts
 
 logger = logging.getLogger("centinela.ingest")
+
+PRECIP_META_KEY = "precip_grid"
 
 
 @dataclass
@@ -88,3 +92,58 @@ async def run_ingest(
     )
     logger.info("Ingesta: %s", result)
     return result
+
+
+# --- grilla de precipitación prevista -------------------------------------------------------------
+# Va aparte de `run_ingest`: son ~200 puntos que Open-Meteo cuenta uno a uno contra su límite diario,
+# así que se renueva cada `precip_ttl_s` (1 h) aunque la ingesta general corra cada 15 minutos.
+def load_precip(db: Database) -> PrecipGrid | None:
+    raw = db.get_meta(PRECIP_META_KEY)
+    if not raw:
+        return None
+    try:
+        return PrecipGrid.model_validate_json(raw)
+    except ValueError:
+        return None
+
+
+def precip_is_due(db: Database, settings: Settings, now: datetime) -> bool:
+    grid = load_precip(db)
+    if grid is None:
+        return True
+    try:
+        age = (now - datetime.fromisoformat(grid.fetched_at)).total_seconds()
+    except ValueError:
+        return True
+    return age >= settings.precip_ttl_s
+
+
+async def run_precip_ingest(
+    db: Database,
+    settings: Settings,
+    *,
+    client: httpx.AsyncClient | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """Renueva la grilla si venció. Devuelve True si la actualizó; un fallo conserva la anterior."""
+    now = now or datetime.now(timezone.utc)
+    if not precip_is_due(db, settings, now):
+        return False
+
+    owns_client = client is None
+    if client is None:
+        client = httpx.AsyncClient(timeout=20, headers={"User-Agent": settings.user_agent})
+    try:
+        grid = await fetch_precip_grid(client, GRID_POINTS, now=now)
+    except UpstreamError as exc:
+        db.set_meta("precip_error", str(exc))
+        logger.warning("Grilla de precipitación falló: %s", exc)
+        return False
+    finally:
+        if owns_client:
+            await client.aclose()
+
+    db.set_meta(PRECIP_META_KEY, grid.model_dump_json())
+    db.set_meta("precip_error", "")
+    logger.info("Grilla de precipitación actualizada: %d celdas", len(grid.cells))
+    return True

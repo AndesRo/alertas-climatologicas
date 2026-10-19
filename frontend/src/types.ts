@@ -81,6 +81,24 @@ export interface Status {
   interval_min: number;
 }
 
+/** Celda de la grilla de precipitación: `mm[i]` es la lluvia (mm) de la hora que termina en `times[i]`. */
+export interface PrecipCell {
+  lat: number;
+  lon: number;
+  mm: (number | null)[];
+}
+
+/** Respuesta de GET /api/precip: precipitación prevista por el modelo de Open-Meteo (no es una medición). */
+export interface PrecipGrid {
+  fetched_at: string;
+  /** Lado de cada celda en grados; la celda queda centrada en (lat, lon). */
+  step_deg: number;
+  /** Horas en UTC, sin sufijo Z. */
+  times: string[];
+  cells: PrecipCell[];
+  demo: boolean;
+}
+
 export interface Thresholds {
   yellow: number;
   orange: number;

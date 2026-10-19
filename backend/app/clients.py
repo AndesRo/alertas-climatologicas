@@ -8,7 +8,8 @@ from typing import Any, Sequence
 
 import httpx
 
-from .models import Current, Hourly, Location, Quake
+from .grid import GRID_STEP_DEG
+from .models import Current, Hourly, Location, PrecipCell, PrecipGrid, Quake
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 USGS_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query"
@@ -111,6 +112,92 @@ async def fetch_forecasts(
         current, hourly = parse_open_meteo(item)
         result[loc.id] = (current, trim_hourly(hourly, current.time))
     return result
+
+
+# --- grilla de precipitación prevista -------------------------------------------------------------
+PRECIP_HOURS = 25  # la hora en curso más las 24 siguientes
+PRECIP_CHUNK = 50  # puntos por petición: mantiene la URL corta y cada llamada liviana
+PRECIP_LABEL = "Open-Meteo (grilla)"
+
+
+def _precip_window(item: Any, start: str, hours: int) -> tuple[list[str], list[float | None]]:
+    """Recorta una serie horaria (UTC) a [start, start + hours)."""
+    try:
+        times = item["hourly"]["time"]
+        values = item["hourly"]["precipitation"]
+    except (KeyError, TypeError):
+        raise UpstreamError(f"{PRECIP_LABEL}: formato inesperado") from None
+    if len(times) != len(values):
+        raise UpstreamError(f"{PRECIP_LABEL}: series de distinto largo")
+    first = next((i for i, t in enumerate(times) if t >= start), None)
+    if first is None:
+        raise UpstreamError(f"{PRECIP_LABEL}: la respuesta no incluye la hora actual")
+    window = slice(first, first + hours)
+    try:
+        mm = [None if v is None else round(float(v), 1) for v in values[window]]
+    except (TypeError, ValueError):
+        raise UpstreamError(f"{PRECIP_LABEL}: valores no numéricos") from None
+    return times[window], mm
+
+
+async def _fetch_precip_chunk(client: httpx.AsyncClient, part: Sequence[tuple[float, float]]) -> list[Any]:
+    params = {
+        "latitude": ",".join(str(lat) for lat, _ in part),
+        "longitude": ",".join(str(lon) for _, lon in part),
+        "hourly": "precipitation",
+        "forecast_days": 2,
+        "timezone": "GMT",
+    }
+    data = await _get_json(client, OPEN_METEO_URL, params)
+    items = data if isinstance(data, list) else [data]
+    if len(items) != len(part):
+        raise UpstreamError(f"{PRECIP_LABEL}: devolvió {len(items)} resultados para {len(part)} puntos")
+    return items
+
+
+async def fetch_precip_grid(
+    client: httpx.AsyncClient,
+    points: Sequence[tuple[float, float]],
+    *,
+    now: datetime | None = None,
+    hours: int = PRECIP_HOURS,
+    chunk: int = PRECIP_CHUNK,
+) -> PrecipGrid:
+    """Precipitación horaria prevista (mm) para cada punto de la grilla, en UTC.
+
+    Se usa hora UTC y no `timezone=auto` porque Chile continental tiene dos husos según la época
+    del año (Magallanes y el resto): en UTC todas las celdas comparten la misma columna de tiempo.
+    Los bloques de puntos se piden en paralelo.
+    """
+    now = now or datetime.now(timezone.utc)
+    start = now.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:00")
+
+    parts = [points[i : i + chunk] for i in range(0, len(points), chunk)]
+    # `return_exceptions` evita dejar tareas huérfanas si una falla mientras las otras siguen en vuelo.
+    results = await asyncio.gather(*(_fetch_precip_chunk(client, part) for part in parts), return_exceptions=True)
+    for result in results:
+        if isinstance(result, BaseException):
+            raise result
+
+    times: list[str] | None = None
+    cells: list[PrecipCell] = []
+    for part, items in zip(parts, results):
+        for (lat, lon), item in zip(part, items):  # type: ignore[arg-type]
+            item_times, mm = _precip_window(item, start, hours)
+            if times is None:
+                times = item_times
+            elif item_times != times:
+                raise UpstreamError(f"{PRECIP_LABEL}: las celdas no comparten la misma columna de tiempo")
+            cells.append(PrecipCell(lat=lat, lon=lon, mm=mm))
+
+    if times is None:
+        raise UpstreamError(f"{PRECIP_LABEL}: respuesta vacía")
+    return PrecipGrid(
+        fetched_at=now.isoformat(timespec="seconds"),
+        step_deg=GRID_STEP_DEG,
+        times=times,
+        cells=cells,
+    )
 
 
 def parse_usgs(data: dict[str, Any]) -> list[Quake]:
