@@ -258,13 +258,13 @@ export function SidePanel({
         </label>
         <label className="flex cursor-pointer items-center justify-between gap-3">
           <span>
-            Radar RainViewer
+            Radar de Lluvia
             <span className="ml-2 text-xs text-fog">
               {radarFailed
                 ? "no disponible"
                 : layers.radar && radarTime
                   ? `a las ${clockFromEpoch(radarTime)}`
-                  : "cobertura limitada en Chile"}
+                  : ""}
             </span>
           </span>
           <input
