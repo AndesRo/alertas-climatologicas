@@ -1,4 +1,4 @@
-#Centinela-Alertas Climatologicas
+# Centinela-Alertas Climatologicas
 
 Monitoreo de amenazas climáticas y sísmicas en Chile. Consulta pronósticos y sismos de APIs gratuitas, los pasa por un motor de reglas propio y muestra las alertas en un mapa interactivo.
 
